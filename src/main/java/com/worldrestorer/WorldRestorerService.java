@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraftforge.fml.loading.FMLPaths;
 
@@ -31,6 +33,7 @@ import java.util.zip.ZipFile;
 
 public class WorldRestorerService {
     private static final AtomicBoolean EXTRACTION_IN_PROGRESS = new AtomicBoolean(false);
+    private static final AtomicBoolean RESET_IN_PROGRESS = new AtomicBoolean(false);
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String STATE_FILE = "worldrestorer_state.json";
     private static final String PENDING_FILE = "worldrestorer.pending";
@@ -50,17 +53,40 @@ public class WorldRestorerService {
             });
     }
 
+    public static CompletableFuture<ResetResult> scheduleReset(MinecraftServer server, ExecutorService executor) {
+        if (!RESET_IN_PROGRESS.compareAndSet(false, true)) {
+            return CompletableFuture.completedFuture(new ResetResult(false, "Reset already in progress", Duration.ZERO));
+        }
+        return CompletableFuture.supplyAsync(() -> resetWorld(server), executor)
+            .whenComplete((result, throwable) -> {
+                RESET_IN_PROGRESS.set(false);
+                if (throwable != null) {
+                    WorldRestorerMod.LOGGER.error("World reset failed", throwable);
+                }
+            });
+    }
+
     public static boolean isExtractionInProgress() {
         return EXTRACTION_IN_PROGRESS.get();
     }
 
+    public static boolean isResetInProgress() {
+        return RESET_IN_PROGRESS.get();
+    }
+
     public static void clearInProgress() {
         EXTRACTION_IN_PROGRESS.set(false);
+        RESET_IN_PROGRESS.set(false);
     }
 
     public static ResourceLocation getDimensionId() {
         ResourceLocation parsed = ResourceLocation.tryParse(WorldRestorerConfig.DIMENSION_ID.get());
         return parsed != null ? parsed : new ResourceLocation(WorldRestorerMod.MODID, "restored_world");
+    }
+
+    public static ResourceLocation getHoldingDimensionId() {
+        ResourceLocation parsed = ResourceLocation.tryParse(WorldRestorerConfig.HOLDING_DIMENSION_ID.get());
+        return parsed != null ? parsed : new ResourceLocation(WorldRestorerMod.MODID, "holding_world");
     }
 
     public static Path resolveArchivePath(MinecraftServer server) {
@@ -191,6 +217,45 @@ public class WorldRestorerService {
         }
     }
 
+    private static ResetResult resetWorld(MinecraftServer server) {
+        Instant start = Instant.now();
+        try {
+            CompletableFuture<Boolean> teleportFuture = new CompletableFuture<>();
+            server.execute(() -> {
+                boolean success = teleportAllPlayersToHolding(server);
+                if (success) {
+                    unloadNonHoldingWorlds(server);
+                }
+                server.saveAllChunks(true, true, true);
+                teleportFuture.complete(success);
+            });
+            if (!teleportFuture.join()) {
+                return updateResetState(server, false, "Holding dimension unavailable", Duration.between(start, Instant.now()));
+            }
+
+            Path root = server.getWorldPath(LevelResource.ROOT);
+            List<Path> targets = List.of(
+                root.resolve("region"),
+                root.resolve("entities"),
+                root.resolve("poi"),
+                root.resolve("data"),
+                root.resolve("dimensions").resolve("minecraft")
+            );
+            for (Path target : targets) {
+                deleteRecursively(target);
+            }
+
+            CompletableFuture<Void> reloadFuture = new CompletableFuture<>();
+            server.execute(() -> reloadWorlds(server, reloadFuture, () -> teleportAllPlayersToOverworld(server)));
+            reloadFuture.join();
+            Duration duration = Duration.between(start, Instant.now());
+            return updateResetState(server, true, "World data reset", duration);
+        } catch (Exception e) {
+            WorldRestorerMod.LOGGER.error("World reset failed", e);
+            return updateResetState(server, false, e.getMessage(), Duration.between(start, Instant.now()));
+        }
+    }
+
     private static void replaceTarget(MinecraftServer server, Path target) throws IOException {
         if (!Files.exists(target)) {
             return;
@@ -306,9 +371,87 @@ public class WorldRestorerService {
         return new ExtractionResult(success, message, files, duration);
     }
 
+    private static ResetResult updateResetState(MinecraftServer server, boolean success, String message, Duration duration) {
+        WorldRestorerState state = loadState(server);
+        state.setLastResetTime(Instant.now().toString());
+        state.setLastResetStatus(success ? "SUCCESS" : "FAILED");
+        state.setLastResetDetails(message);
+        state.setLastResetDurationMs(duration.toMillis());
+        stateDirty = true;
+        saveStateIfDirty(server);
+        return new ResetResult(success, message, duration);
+    }
+
+    private static boolean teleportAllPlayersToHolding(MinecraftServer server) {
+        ResourceLocation holdingId = getHoldingDimensionId();
+        ServerLevel holdingLevel = server.getLevel(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, holdingId));
+        if (holdingLevel == null) {
+            WorldRestorerMod.LOGGER.warn("Holding dimension {} is not available", holdingId);
+            return false;
+        }
+        ensurePlatform(holdingLevel, new net.minecraft.core.BlockPos(0, 80, 0));
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            player.teleportTo(holdingLevel, 0.5, 80, 0.5, player.getYRot(), player.getXRot());
+        }
+        return true;
+    }
+
+    private static void teleportAllPlayersToOverworld(MinecraftServer server) {
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return;
+        }
+        net.minecraft.core.BlockPos spawn = overworld.getSharedSpawnPos();
+        ensurePlatform(overworld, spawn);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            player.teleportTo(overworld, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, player.getYRot(), player.getXRot());
+        }
+    }
+
+    private static void ensurePlatform(ServerLevel level, net.minecraft.core.BlockPos pos) {
+        if (level.isEmptyBlock(pos.below())) {
+            level.setBlockAndUpdate(pos.below(), net.minecraft.world.level.block.Blocks.BEDROCK.defaultBlockState());
+        }
+        if (!level.isEmptyBlock(pos)) {
+            level.setBlockAndUpdate(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        }
+    }
+
+    private static void unloadNonHoldingWorlds(MinecraftServer server) {
+        ResourceLocation holdingId = getHoldingDimensionId();
+        for (ServerLevel level : server.getAllLevels()) {
+            if (level.dimension().location().equals(holdingId)) {
+                continue;
+            }
+            level.getChunkSource().save(true);
+            level.getChunkSource().close();
+        }
+    }
+
+    private static void reloadWorlds(MinecraftServer server, CompletableFuture<Void> future, Runnable onComplete) {
+        try {
+            server.reloadResources(server.getPackRepository().getSelectedIds())
+                .thenRun(() -> server.execute(() -> {
+                    onComplete.run();
+                    future.complete(null);
+                }))
+                .exceptionally(throwable -> {
+                    WorldRestorerMod.LOGGER.error("Failed to reload resources after reset", throwable);
+                    server.execute(() -> future.complete(null));
+                    return null;
+                });
+        } catch (Exception e) {
+            WorldRestorerMod.LOGGER.error("Failed to schedule reload after reset", e);
+            future.complete(null);
+        }
+    }
+
     private record ExtractionSummary(int filesExtracted) {
     }
 
     public record ExtractionResult(boolean success, String message, int filesExtracted, Duration duration) {
+    }
+
+    public record ResetResult(boolean success, String message, Duration duration) {
     }
 }

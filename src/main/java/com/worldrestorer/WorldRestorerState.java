@@ -6,6 +6,10 @@ public class WorldRestorerState {
     private String lastExtractDetails;
     private int lastExtractFiles;
     private long lastExtractDurationMs;
+    private String lastResetTime;
+    private String lastResetStatus;
+    private String lastResetDetails;
+    private long lastResetDurationMs;
 
     public String getLastExtractTime() {
         return lastExtractTime;
@@ -45,5 +49,37 @@ public class WorldRestorerState {
 
     public void setLastExtractDurationMs(long lastExtractDurationMs) {
         this.lastExtractDurationMs = lastExtractDurationMs;
+    }
+
+    public String getLastResetTime() {
+        return lastResetTime;
+    }
+
+    public void setLastResetTime(String lastResetTime) {
+        this.lastResetTime = lastResetTime;
+    }
+
+    public String getLastResetStatus() {
+        return lastResetStatus;
+    }
+
+    public void setLastResetStatus(String lastResetStatus) {
+        this.lastResetStatus = lastResetStatus;
+    }
+
+    public String getLastResetDetails() {
+        return lastResetDetails;
+    }
+
+    public void setLastResetDetails(String lastResetDetails) {
+        this.lastResetDetails = lastResetDetails;
+    }
+
+    public long getLastResetDurationMs() {
+        return lastResetDurationMs;
+    }
+
+    public void setLastResetDurationMs(long lastResetDurationMs) {
+        this.lastResetDurationMs = lastResetDurationMs;
     }
 }
