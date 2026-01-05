@@ -78,7 +78,8 @@ public class WorldRestorerService {
 
     public static Path resolveDimensionPath(MinecraftServer server) {
         ResourceLocation dimensionId = getDimensionId();
-        return server.getWorldPath(LevelResource.DIMENSIONS)
+        return server.getWorldPath(LevelResource.ROOT)
+            .resolve("dimensions")
             .resolve(dimensionId.getNamespace())
             .resolve(dimensionId.getPath());
     }
