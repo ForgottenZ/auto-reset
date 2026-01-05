@@ -246,10 +246,7 @@ public class WorldRestorerService {
             }
 
             CompletableFuture<Void> reloadFuture = new CompletableFuture<>();
-            server.execute(() -> {
-                reloadWorlds(server, reloadFuture);
-                teleportAllPlayersToOverworld(server);
-            });
+            server.execute(() -> reloadWorlds(server, reloadFuture, () -> teleportAllPlayersToOverworld(server)));
             reloadFuture.join();
             Duration duration = Duration.between(start, Instant.now());
             return updateResetState(server, true, "World data reset", duration);
@@ -431,10 +428,13 @@ public class WorldRestorerService {
         }
     }
 
-    private static void reloadWorlds(MinecraftServer server, CompletableFuture<Void> future) {
+    private static void reloadWorlds(MinecraftServer server, CompletableFuture<Void> future, Runnable onComplete) {
         try {
             server.reloadResources(server.getPackRepository().getSelectedIds())
-                .thenRun(() -> server.execute(future::complete))
+                .thenRun(() -> server.execute(() -> {
+                    onComplete.run();
+                    future.complete(null);
+                }))
                 .exceptionally(throwable -> {
                     WorldRestorerMod.LOGGER.error("Failed to reload resources after reset", throwable);
                     server.execute(() -> future.complete(null));
