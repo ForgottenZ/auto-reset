@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="worldrestorer"
+version="1.0.0"
+displayName="World Restorer"
+description='''
+Restore a world dimension from a local zip archive (blocks and entities).
+'''
+
+[[dependencies.worldrestorer]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.worldrestorer]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="BOTH"
