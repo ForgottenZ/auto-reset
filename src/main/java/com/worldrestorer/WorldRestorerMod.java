@@ -37,6 +37,7 @@ public class WorldRestorerMod {
 
     private void onServerAboutToStart(ServerAboutToStartEvent event) {
         if (WorldRestorerConfig.AUTO_EXTRACT_ON_START.get()) {
+            WorldRestorerService.clearPlayerData(event.getServer());
             WorldRestorerService.scheduleExtract(event.getServer(), EXTRACT_EXECUTOR, true);
         }
     }
