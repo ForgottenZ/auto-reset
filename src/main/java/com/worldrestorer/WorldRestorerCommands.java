@@ -28,6 +28,9 @@ public class WorldRestorerCommands {
             .then(Commands.literal("extract")
                 .requires(source -> source.hasPermission(2))
                 .executes(context -> extract(context.getSource())))
+            .then(Commands.literal("reset")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> resetWorld(context.getSource())))
             .then(Commands.literal("tp")
                 .requires(source -> source.hasPermission(2))
                 .executes(context -> teleport(context.getSource(), null))
@@ -45,6 +48,7 @@ public class WorldRestorerCommands {
         source.sendSuccess(() -> Component.literal("WorldRestorer status:").withStyle(ChatFormatting.GOLD), false);
         source.sendSuccess(() -> Component.literal("Archive: " + archive).withStyle(archiveExists ? ChatFormatting.GREEN : ChatFormatting.RED), false);
         source.sendSuccess(() -> Component.literal("Dimension: " + WorldRestorerService.getDimensionId()), false);
+        source.sendSuccess(() -> Component.literal("Holding dimension: " + WorldRestorerService.getHoldingDimensionId()), false);
         source.sendSuccess(() -> Component.literal("Target directory: " + dimensionPath), false);
         if (state.getLastExtractTime() != null) {
             source.sendSuccess(() -> Component.literal("Last extract: " + state.getLastExtractTime() + " (" + state.getLastExtractStatus() + ")"), false);
@@ -52,6 +56,13 @@ public class WorldRestorerCommands {
             source.sendSuccess(() -> Component.literal("Files: " + state.getLastExtractFiles() + ", Duration: " + state.getLastExtractDurationMs() + " ms"), false);
         } else {
             source.sendSuccess(() -> Component.literal("Last extract: none"), false);
+        }
+        if (state.getLastResetTime() != null) {
+            source.sendSuccess(() -> Component.literal("Last reset: " + state.getLastResetTime() + " (" + state.getLastResetStatus() + ")"), false);
+            source.sendSuccess(() -> Component.literal("Reset details: " + state.getLastResetDetails()), false);
+            source.sendSuccess(() -> Component.literal("Reset duration: " + state.getLastResetDurationMs() + " ms"), false);
+        } else {
+            source.sendSuccess(() -> Component.literal("Last reset: none"), false);
         }
         return 1;
     }
@@ -74,6 +85,24 @@ public class WorldRestorerCommands {
                     source.sendSuccess(() -> Component.literal("Extraction completed: " + result.message()).withStyle(ChatFormatting.GREEN), true);
                 } else {
                     source.sendFailure(Component.literal("Extraction failed: " + result.message()));
+                }
+            }));
+        return 1;
+    }
+
+    private static int resetWorld(CommandSourceStack source) {
+        MinecraftServer server = source.getServer();
+        if (WorldRestorerService.isResetInProgress()) {
+            source.sendFailure(Component.literal("World reset already in progress."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Starting world reset... Players will be moved to holding world."), true);
+        WorldRestorerService.scheduleReset(server, WorldRestorerMod.EXTRACT_EXECUTOR)
+            .thenAccept(result -> server.execute(() -> {
+                if (result.success()) {
+                    source.sendSuccess(() -> Component.literal("World reset completed: " + result.message()).withStyle(ChatFormatting.GREEN), true);
+                } else {
+                    source.sendFailure(Component.literal("World reset failed: " + result.message()));
                 }
             }));
         return 1;
