@@ -223,6 +223,9 @@ public class WorldRestorerService {
             CompletableFuture<Boolean> teleportFuture = new CompletableFuture<>();
             server.execute(() -> {
                 boolean success = teleportAllPlayersToHolding(server);
+                if (success) {
+                    unloadNonHoldingWorlds(server);
+                }
                 server.saveAllChunks(true, true, true);
                 teleportFuture.complete(success);
             });
@@ -242,7 +245,12 @@ public class WorldRestorerService {
                 deleteRecursively(target);
             }
 
-            server.execute(() -> teleportAllPlayersToOverworld(server));
+            CompletableFuture<Void> reloadFuture = new CompletableFuture<>();
+            server.execute(() -> {
+                reloadWorlds(server, reloadFuture);
+                teleportAllPlayersToOverworld(server);
+            });
+            reloadFuture.join();
             Duration duration = Duration.between(start, Instant.now());
             return updateResetState(server, true, "World data reset", duration);
         } catch (Exception e) {
@@ -409,6 +417,32 @@ public class WorldRestorerService {
         }
         if (!level.isEmptyBlock(pos)) {
             level.setBlockAndUpdate(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        }
+    }
+
+    private static void unloadNonHoldingWorlds(MinecraftServer server) {
+        ResourceLocation holdingId = getHoldingDimensionId();
+        for (ServerLevel level : server.getAllLevels()) {
+            if (level.dimension().location().equals(holdingId)) {
+                continue;
+            }
+            level.getChunkSource().save(true);
+            level.getChunkSource().close();
+        }
+    }
+
+    private static void reloadWorlds(MinecraftServer server, CompletableFuture<Void> future) {
+        try {
+            server.reloadResources(server.getPackRepository().getSelectedIds())
+                .thenRun(() -> server.execute(future::complete))
+                .exceptionally(throwable -> {
+                    WorldRestorerMod.LOGGER.error("Failed to reload resources after reset", throwable);
+                    server.execute(() -> future.complete(null));
+                    return null;
+                });
+        } catch (Exception e) {
+            WorldRestorerMod.LOGGER.error("Failed to schedule reload after reset", e);
+            future.complete(null);
         }
     }
 

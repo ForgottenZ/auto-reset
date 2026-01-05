@@ -56,7 +56,7 @@ All commands are under `/worldrestore`:
 
 - `/worldrestore status` — Show current config, zip detection, and last extraction result.
 - `/worldrestore extract` — Trigger extraction (OP only).
-- `/worldrestore reset` — Reset the world data (region/entities/poi/data + vanilla dimensions) while moving all players to the holding dimension, then return them to the overworld spawn (OP only).
+- `/worldrestore reset` — Reset the world data (region/entities/poi/data + vanilla dimensions) while moving all players to the holding dimension, unload non-holding worlds, reload world data, then return them to the overworld spawn (OP only).
 - `/worldrestore tp [player]` — Teleport to the restored dimension (OP only).
 
 ## How it works
