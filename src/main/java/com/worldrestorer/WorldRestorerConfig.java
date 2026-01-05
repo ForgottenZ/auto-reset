@@ -7,7 +7,6 @@ public class WorldRestorerConfig {
 
     public static final ForgeConfigSpec.ConfigValue<String> ARCHIVE_PATH;
     public static final ForgeConfigSpec.ConfigValue<String> DIMENSION_ID;
-    public static final ForgeConfigSpec.ConfigValue<String> HOLDING_DIMENSION_ID;
     public static final ForgeConfigSpec.ConfigValue<String> EXTRACT_MODE;
     public static final ForgeConfigSpec.BooleanValue AUTO_EXTRACT_ON_START;
     public static final ForgeConfigSpec.BooleanValue REQUIRE_RESTART_FOR_REEXTRACT;
@@ -22,9 +21,6 @@ public class WorldRestorerConfig {
         DIMENSION_ID = builder
             .comment("Dimension id for the restored world.")
             .define("dimensionId", "worldrestorer:restored_world");
-        HOLDING_DIMENSION_ID = builder
-            .comment("Temporary holding dimension id used during world reset.")
-            .define("holdingDimensionId", "worldrestorer:holding_world");
         EXTRACT_MODE = builder
             .comment("Extract mode: REPLACE or MERGE.")
             .define("extractMode", "REPLACE");
