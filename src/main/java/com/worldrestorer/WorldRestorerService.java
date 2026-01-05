@@ -122,6 +122,25 @@ public class WorldRestorerService {
         }
     }
 
+    public static void clearPlayerData(MinecraftServer server) {
+        Path playerDataPath = server.getWorldPath(LevelResource.PLAYER_DATA_DIR);
+        if (!Files.exists(playerDataPath)) {
+            return;
+        }
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(playerDataPath)) {
+            int deleted = 0;
+            for (Path child : stream) {
+                deleteRecursively(child);
+                deleted++;
+            }
+            if (deleted > 0) {
+                WorldRestorerMod.LOGGER.info("Cleared {} playerdata entries at {}", deleted, playerDataPath);
+            }
+        } catch (IOException e) {
+            WorldRestorerMod.LOGGER.warn("Failed to clear playerdata at {}", playerDataPath, e);
+        }
+    }
+
     public static WorldRestorerState loadState(MinecraftServer server) {
         if (cachedState != null) {
             return cachedState;
